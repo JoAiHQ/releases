@@ -1,0 +1,303 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v0.19.0)'
+        required: true
+      sha:
+        description: 'Commit SHA to build'
+        required: true
+
+concurrency:
+  group: build-${{ inputs.version }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────
+  # Desktop — Tauri (macOS ARM/Intel, Linux, Windows)
+  # ──────────────────────────────────────────────────────
+  publish-tauri:
+    permissions:
+      contents: write
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      NEXT_TELEMETRY_DISABLED: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin --bundles app'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin --bundles app'
+          - platform: ubuntu-22.04
+            args: '--bundles appimage'
+          - platform: windows-latest
+            args: '--bundles msi'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: JoAiHQ/pwa
+          token: ${{ secrets.JOAI_GITHUB_TOKEN }}
+          ref: ${{ inputs.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Refresh static cache expiry
+        run: node scripts/refresh-manifest-expiry.js
+
+      - uses: tauri-apps/tauri-action@action-v0.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_PUBLIC_ENV: mainnet
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ inputs.version }}
+          releaseName: 'JoAi ${{ inputs.version }}'
+          releaseBody: 'Release notes: https://joai.ai/changelog'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  # ──────────────────────────────────────────────────────
+  # iOS — TestFlight
+  # ──────────────────────────────────────────────────────
+  publish-ios:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: JoAiHQ/pwa
+          token: ${{ secrets.JOAI_GITHUB_TOKEN }}
+          ref: ${{ inputs.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+        working-directory: .
+
+      - name: Load CI config
+        run: |
+          set -a
+          source ../.env.ci
+          set +a
+          echo "FASTLANE_APPLE_API_KEY_ID=$FASTLANE_APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "FASTLANE_APPLE_API_ISSUER_ID=$FASTLANE_APPLE_API_ISSUER_ID" >> "$GITHUB_ENV"
+          echo "FASTLANE_TEAM_ID=$FASTLANE_TEAM_ID" >> "$GITHUB_ENV"
+          echo "MATCH_GIT_URL=$MATCH_GIT_URL" >> "$GITHUB_ENV"
+
+      - name: Decode App Store Connect API key
+        run: |
+          mkdir -p ~/private_keys
+          echo "${{ secrets.FASTLANE_APPLE_API_KEY_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey.p8
+          echo "FASTLANE_APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: Setup SSH for Match
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.MATCH_GIT_PRIVATE_KEY }}" > ~/.ssh/match_key
+          chmod 600 ~/.ssh/match_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          printf 'Host github.com\n  IdentityFile ~/.ssh/match_key\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0'
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Build & upload to TestFlight
+        env:
+          SKIP_BUILD: 'true'
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          NEXT_PUBLIC_ENV: mainnet
+        run: bundle exec fastlane beta
+
+  # ──────────────────────────────────────────────────────
+  # Android — Play Store (beta)
+  # ──────────────────────────────────────────────────────
+  publish-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: JoAiHQ/pwa
+          token: ${{ secrets.JOAI_GITHUB_TOKEN }}
+          ref: ${{ inputs.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+        working-directory: .
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Load CI config
+        run: |
+          set -a
+          source ../.env.ci
+          set +a
+          echo "ANDROID_RELEASE_KEY_ALIAS=$ANDROID_RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
+
+      - name: Decode Android keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > ~/release.keystore
+          echo "ANDROID_RELEASE_STORE_FILE=$HOME/release.keystore" >> "$GITHUB_ENV"
+          echo "ANDROID_RELEASE_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Decode Google Play service account key
+        run: |
+          echo "${{ secrets.GOOGLE_PLAY_JSON_KEY_BASE64 }}" | base64 --decode > ~/google-play-key.json
+          echo "GOOGLE_PLAY_JSON_KEY_FILE=$HOME/google-play-key.json" >> "$GITHUB_ENV"
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0'
+          bundler-cache: true
+          working-directory: android
+
+      - name: Create Capacitor assets dir
+        run: mkdir -p app/src/main/assets
+
+      - name: Build & upload to Play Store beta
+        env:
+          SKIP_BUILD: 'true'
+          NEXT_PUBLIC_ENV: mainnet
+        run: bundle exec fastlane beta
+
+  # ──────────────────────────────────────────────────────
+  # Homebrew — Update tap with macOS artifacts
+  # ──────────────────────────────────────────────────────
+  update-homebrew:
+    needs: publish-tauri
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+        env:
+          VERSION: ${{ inputs.version }}
+
+      - name: Download macOS artifacts from release
+        env:
+          GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/artifacts
+          # Retry download since tauri-action may still be finalizing the release
+          for i in 1 2 3; do
+            gh release download "${{ inputs.version }}" \
+              --repo JoAiHQ/releases \
+              --pattern "JoAi_aarch64.app.tar.gz" \
+              --pattern "JoAi_x64.app.tar.gz" \
+              --dir /tmp/artifacts && break
+            echo "Retry $i..."
+            sleep 30
+          done
+
+      - name: Compute SHA256 hashes
+        id: hashes
+        run: |
+          echo "arm64=$(sha256sum /tmp/artifacts/JoAi_aarch64.app.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "x64=$(sha256sum /tmp/artifacts/JoAi_x64.app.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: JoAiHQ/homebrew-joai
+          token: ${{ secrets.JOAI_GITHUB_TOKEN }}
+
+      - name: Create release on tap repo
+        env:
+          GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --repo JoAiHQ/homebrew-joai \
+            --title "JoAi v${{ steps.version.outputs.version }}" \
+            --notes "Mirrored from JoAi v${{ steps.version.outputs.version }}" \
+            /tmp/artifacts/JoAi_aarch64.app.tar.gz \
+            /tmp/artifacts/JoAi_x64.app.tar.gz
+
+      - name: Update cask formula
+        run: |
+          cat > Casks/joai.rb << 'RUBY'
+          cask "joai" do
+            version "${{ steps.version.outputs.version }}"
+
+            on_arm do
+              sha256 "${{ steps.hashes.outputs.arm64 }}"
+              url "https://github.com/JoAiHQ/homebrew-joai/releases/download/v#{version}/JoAi_aarch64.app.tar.gz"
+            end
+
+            on_intel do
+              sha256 "${{ steps.hashes.outputs.x64 }}"
+              url "https://github.com/JoAiHQ/homebrew-joai/releases/download/v#{version}/JoAi_x64.app.tar.gz"
+            end
+
+            name "JoAi"
+            desc "Desktop app for workspace management, file operations, and agent interactions"
+            homepage "https://joai.ai"
+
+            app "JoAi.app"
+
+            zap trash: [
+              "~/Library/Application Support/ai.joai.app",
+              "~/Library/Caches/ai.joai.app",
+              "~/Library/Preferences/ai.joai.app.plist",
+              "~/.joai-cli",
+            ]
+          end
+          RUBY
+          sed -i 's/^          //' Casks/joai.rb
+
+      - name: Commit and push updated cask
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/joai.rb
+          git diff --cached --quiet || git commit -m "Update JoAi to v${{ steps.version.outputs.version }}"
+          git push
