@@ -68,12 +68,39 @@ jobs:
       - name: Refresh static cache expiry
         run: node scripts/refresh-manifest-expiry.js
 
+      - name: Import Apple Developer ID certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PWD=$(openssl rand -base64 32)
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+      - name: Setup Apple notarization
+        if: matrix.platform == 'macos-latest'
+        run: |
+          mkdir -p ~/private_keys
+          echo "${{ secrets.FASTLANE_APPLE_API_KEY_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey.p8
+
       - uses: tauri-apps/tauri-action@action-v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           NEXT_PUBLIC_ENV: mainnet
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos-latest' && 'Developer ID Application: vLeap e.U. (SY59U6Q75Y)' || '' }}
+          APPLE_API_ISSUER: ${{ matrix.platform == 'macos-latest' && 'b7a5eb53-8cf6-4fd4-a4ce-20e375962c2e' || '' }}
+          APPLE_API_KEY: ${{ matrix.platform == 'macos-latest' && 'QK38U528RU' || '' }}
+          APPLE_API_KEY_PATH: ${{ matrix.platform == 'macos-latest' && '~/private_keys/AuthKey.p8' || '' }}
         with:
           tagName: ${{ inputs.version }}
           releaseName: 'JoAi ${{ inputs.version }}'
