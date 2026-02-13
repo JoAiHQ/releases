@@ -91,16 +91,20 @@ jobs:
           mkdir -p ~/private_keys
           echo "${{ secrets.FASTLANE_APPLE_API_KEY_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey.p8
 
+      - name: Set Apple signing env vars
+        if: matrix.platform == 'macos-latest'
+        run: |
+          echo "APPLE_SIGNING_IDENTITY=Developer ID Application: vLeap e.U. (SY59U6Q75Y)" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=b7a5eb53-8cf6-4fd4-a4ce-20e375962c2e" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=QK38U528RU" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
+
       - uses: tauri-apps/tauri-action@action-v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           NEXT_PUBLIC_ENV: mainnet
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos-latest' && 'Developer ID Application: vLeap e.U. (SY59U6Q75Y)' || '' }}
-          APPLE_API_ISSUER: ${{ matrix.platform == 'macos-latest' && 'b7a5eb53-8cf6-4fd4-a4ce-20e375962c2e' || '' }}
-          APPLE_API_KEY: ${{ matrix.platform == 'macos-latest' && 'QK38U528RU' || '' }}
-          APPLE_API_KEY_PATH: ${{ matrix.platform == 'macos-latest' && '~/private_keys/AuthKey.p8' || '' }}
         with:
           tagName: ${{ inputs.version }}
           releaseName: 'JoAi ${{ inputs.version }}'
