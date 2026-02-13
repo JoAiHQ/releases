@@ -70,7 +70,7 @@ jobs:
 
       - uses: tauri-apps/tauri-action@action-v0.6.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           NEXT_PUBLIC_ENV: mainnet
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
