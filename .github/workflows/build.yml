@@ -68,22 +68,21 @@ jobs:
       - name: Refresh static cache expiry
         run: node scripts/refresh-manifest-expiry.js
 
-      - name: Decode Tauri signing key
+      - name: Verify signing key format
         shell: bash
         run: |
-          DECODED_KEY=$(echo "$SIGNING_KEY_B64" | base64 --decode)
-          {
-            echo "TAURI_SIGNING_PRIVATE_KEY<<TAURI_KEY_DELIM"
-            echo "$DECODED_KEY"
-            echo "TAURI_KEY_DELIM"
-          } >> "$GITHUB_ENV"
+          echo "Key length: ${#SIGNING_KEY}"
+          echo "Key starts with: ${SIGNING_KEY:0:4}"
+          echo "Password length: ${#SIGNING_PWD}"
         env:
-          SIGNING_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_PWD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - uses: tauri-apps/tauri-action@action-v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           NEXT_PUBLIC_ENV: mainnet
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ inputs.version }}
