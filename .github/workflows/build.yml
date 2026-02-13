@@ -68,16 +68,6 @@ jobs:
       - name: Refresh static cache expiry
         run: node scripts/refresh-manifest-expiry.js
 
-      - name: Verify signing key format
-        shell: bash
-        run: |
-          echo "Key length: ${#SIGNING_KEY}"
-          echo "Key starts with: ${SIGNING_KEY:0:4}"
-          echo "Password length: ${#SIGNING_PWD}"
-        env:
-          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          SIGNING_PWD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
       - uses: tauri-apps/tauri-action@action-v0.6.0
         env:
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
@@ -156,7 +146,7 @@ jobs:
         run: bundle exec fastlane beta
 
   # ──────────────────────────────────────────────────────
-  # Android — Play Store (beta)
+  # Android — Play Store (internal testing)
   # ──────────────────────────────────────────────────────
   publish-android:
     runs-on: ubuntu-latest
@@ -214,11 +204,11 @@ jobs:
       - name: Create Capacitor assets dir
         run: mkdir -p app/src/main/assets
 
-      - name: Build & upload to Play Store beta
+      - name: Build & upload to Play Store internal testing
         env:
           SKIP_BUILD: 'true'
           NEXT_PUBLIC_ENV: mainnet
-        run: bundle exec fastlane beta
+        run: bundle exec fastlane internal
 
   # ──────────────────────────────────────────────────────
   # Homebrew — Update tap with macOS artifacts
