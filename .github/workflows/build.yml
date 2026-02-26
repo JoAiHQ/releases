@@ -138,6 +138,13 @@ jobs:
         run: npm ci --legacy-peer-deps
         working-directory: .
 
+      - name: Build web app
+        run: npm run build
+        working-directory: .
+        env:
+          NEXT_PUBLIC_ENV: mainnet
+          SKIP_INDEXNOW: '1'
+
       - name: Load CI config
         run: |
           set -a
@@ -200,6 +207,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
         working-directory: .
+
+      - name: Build web app
+        run: npm run build
+        working-directory: .
+        env:
+          NEXT_PUBLIC_ENV: mainnet
+          SKIP_INDEXNOW: '1'
 
       - name: Setup Java
         uses: actions/setup-java@v4
