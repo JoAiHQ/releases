@@ -143,7 +143,9 @@ jobs:
         working-directory: .
         env:
           NEXT_PUBLIC_ENV: mainnet
+          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           SKIP_INDEXNOW: '1'
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Load CI config
         run: |
@@ -213,7 +215,9 @@ jobs:
         working-directory: .
         env:
           NEXT_PUBLIC_ENV: mainnet
+          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           SKIP_INDEXNOW: '1'
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Setup Java
         uses: actions/setup-java@v4
