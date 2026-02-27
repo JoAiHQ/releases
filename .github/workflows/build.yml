@@ -19,6 +19,7 @@ jobs:
   # Desktop — Tauri (macOS ARM/Intel, Linux, Windows)
   # ──────────────────────────────────────────────────────
   publish-tauri:
+    timeout-minutes: 60
     permissions:
       contents: write
     env:
@@ -117,6 +118,7 @@ jobs:
   # iOS — TestFlight
   # ──────────────────────────────────────────────────────
   publish-ios:
+    timeout-minutes: 45
     runs-on: macos-latest
     defaults:
       run:
@@ -189,6 +191,7 @@ jobs:
   # Android — Play Store (internal testing)
   # ──────────────────────────────────────────────────────
   publish-android:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -263,6 +266,7 @@ jobs:
   # Homebrew — Update tap with macOS artifacts
   # ──────────────────────────────────────────────────────
   update-homebrew:
+    timeout-minutes: 15
     needs: publish-tauri
     runs-on: ubuntu-latest
     steps:
