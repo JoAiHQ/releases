@@ -33,7 +33,7 @@ jobs:
             args: '--target aarch64-apple-darwin --bundles app,dmg'
             rust_targets: 'aarch64-apple-darwin'
           - runner: macos-15-intel
-            args: '--target x86_64-apple-darwin --bundles app,dmg'
+            args: '--target x86_64-apple-darwin --bundles app'
             rust_targets: 'x86_64-apple-darwin'
           - runner: ubuntu-22.04
             args: '--bundles appimage'
