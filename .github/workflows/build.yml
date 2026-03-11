@@ -186,7 +186,6 @@ jobs:
 
       - name: Build & upload to TestFlight
         env:
-          IOS_AUTOMATIC_SIGNING: 'true'
           SKIP_BUILD: 'true'
           MATCH_READONLY: 'false'
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
