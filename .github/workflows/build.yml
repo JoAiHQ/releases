@@ -153,6 +153,15 @@ jobs:
           SKIP_INDEXNOW: '1'
           NODE_OPTIONS: --max-old-space-size=6144
 
+      - name: Strip SEO-only pages from mobile bundle
+        run: |
+          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
+          for dir in $SEO_DIRS; do
+            rm -rf "out/$dir" "out/en/$dir" "out/de/$dir"
+          done
+          echo "Remaining out/ size: $(du -sh out/ | cut -f1)"
+        working-directory: .
+
       - name: Load CI config
         run: |
           set -a
@@ -226,6 +235,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
           SKIP_INDEXNOW: '1'
           NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Strip SEO-only pages from mobile bundle
+        run: |
+          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
+          for dir in $SEO_DIRS; do
+            rm -rf "out/$dir" "out/en/$dir" "out/de/$dir"
+          done
+          echo "Remaining out/ size: $(du -sh out/ | cut -f1)"
+        working-directory: .
 
       - name: Setup Java
         uses: actions/setup-java@v4
