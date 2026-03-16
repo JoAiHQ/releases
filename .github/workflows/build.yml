@@ -165,11 +165,15 @@ jobs:
           find out/ -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -15
         working-directory: .
 
-      - name: Strip SEO pages from mobile bundle
+      - name: Strip unneeded files from mobile bundle
         run: |
-          rm -rf out/en out/de
+          # Remove RSC flight data (.txt) — Capacitor loads HTML directly
+          find out/ -name '*.txt' -delete
+          # Remove SEO-only page dirs (website landing pages, never accessed from mobile)
           SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
-          for dir in $SEO_DIRS; do rm -rf "out/$dir"; done
+          for dir in $SEO_DIRS; do
+            rm -rf "out/$dir" "out/en/$dir" "out/de/$dir"
+          done
           echo "After strip: $(du -sh out/ | cut -f1)"
         working-directory: .
 
@@ -259,11 +263,15 @@ jobs:
           find out/ -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -15
         working-directory: .
 
-      - name: Strip SEO pages from mobile bundle
+      - name: Strip unneeded files from mobile bundle
         run: |
-          rm -rf out/en out/de
+          # Remove RSC flight data (.txt) — Capacitor loads HTML directly
+          find out/ -name '*.txt' -delete
+          # Remove SEO-only page dirs (website landing pages, never accessed from mobile)
           SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
-          for dir in $SEO_DIRS; do rm -rf "out/$dir"; done
+          for dir in $SEO_DIRS; do
+            rm -rf "out/$dir" "out/en/$dir" "out/de/$dir"
+          done
           echo "After strip: $(du -sh out/ | cut -f1)"
         working-directory: .
 
