@@ -168,7 +168,7 @@ jobs:
       - name: Strip unneeded files from mobile bundle
         run: |
           # Remove RSC flight data (.txt) — Capacitor loads HTML directly
-          find out/ -name '*.txt' -delete
+          find out/ -type f -name '*.txt' -delete
           # Remove SEO-only page dirs (website landing pages, never accessed from mobile)
           SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
           for dir in $SEO_DIRS; do
@@ -266,7 +266,7 @@ jobs:
       - name: Strip unneeded files from mobile bundle
         run: |
           # Remove RSC flight data (.txt) — Capacitor loads HTML directly
-          find out/ -name '*.txt' -delete
+          find out/ -type f -name '*.txt' -delete
           # Remove SEO-only page dirs (website landing pages, never accessed from mobile)
           SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
           for dir in $SEO_DIRS; do
