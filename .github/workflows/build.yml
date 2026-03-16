@@ -153,13 +153,21 @@ jobs:
           SKIP_INDEXNOW: '1'
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Strip SEO-only pages from mobile bundle
+      - name: Strip SEO pages and data from mobile bundle
         run: |
-          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
+          # Remove locale dirs entirely (prerendered SEO pages, not needed for mobile)
+          rm -rf out/en out/de
+          # Remove SEO-only page dirs
+          SEO_DIRS="about ai-demo alternatives answers best blog chains changelog chatapps contact download ecosystem integrations kb marketplace openclaw plans security use-cases wallets"
           for dir in $SEO_DIRS; do
-            rm -rf "out/$dir" "out/en/$dir" "out/de/$dir"
+            rm -rf "out/$dir"
           done
+          # Remove data dirs (fetched from API at runtime)
+          rm -rf out/objects out/agents out/settings out/swarms out/media-kits out/pitches out/abis
+          # Remove SEO files
+          rm -f out/sitemap.xml out/robots.txt out/llms.txt out/SKILL.md
           echo "Remaining out/ size: $(du -sh out/ | cut -f1)"
+          echo "Top dirs:" && du -sh out/*/ 2>/dev/null | sort -rh | head -10
         working-directory: .
 
       - name: Load CI config
@@ -236,13 +244,17 @@ jobs:
           SKIP_INDEXNOW: '1'
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Strip SEO-only pages from mobile bundle
+      - name: Strip SEO pages and data from mobile bundle
         run: |
-          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
+          rm -rf out/en out/de
+          SEO_DIRS="about ai-demo alternatives answers best blog chains changelog chatapps contact download ecosystem integrations kb marketplace openclaw plans security use-cases wallets"
           for dir in $SEO_DIRS; do
-            rm -rf "out/$dir" "out/en/$dir" "out/de/$dir"
+            rm -rf "out/$dir"
           done
+          rm -rf out/objects out/agents out/settings out/swarms out/media-kits out/pitches out/abis
+          rm -f out/sitemap.xml out/robots.txt out/llms.txt out/SKILL.md
           echo "Remaining out/ size: $(du -sh out/ | cut -f1)"
+          echo "Top dirs:" && du -sh out/*/ 2>/dev/null | sort -rh | head -10
         working-directory: .
 
       - name: Setup Java
