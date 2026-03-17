@@ -153,18 +153,6 @@ jobs:
           SKIP_INDEXNOW: '1'
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Diagnose out/ size
-        run: |
-          echo "=== Total out/ size ==="
-          du -sh out/
-          echo "=== Top-level dirs by size ==="
-          du -sh out/*/ 2>/dev/null | sort -rh | head -20
-          echo "=== Largest files ==="
-          find out/ -type f -size +1M -exec du -sh {} \; | sort -rh | head -20
-          echo "=== File count by extension ==="
-          find out/ -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -15
-        working-directory: .
-
       - name: Strip SEO pages from mobile bundle
         run: |
           # Mobile app uses top-level routes (/login, /office, etc.)
@@ -175,7 +163,6 @@ jobs:
           for dir in $SEO_DIRS; do
             rm -rf "out/$dir"
           done
-          echo "After strip: $(du -sh out/ | cut -f1)"
         working-directory: .
 
       - name: Load CI config
@@ -252,18 +239,6 @@ jobs:
           SKIP_INDEXNOW: '1'
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Diagnose out/ size
-        run: |
-          echo "=== Total out/ size ==="
-          du -sh out/
-          echo "=== Top-level dirs by size ==="
-          du -sh out/*/ 2>/dev/null | sort -rh | head -20
-          echo "=== Largest files ==="
-          find out/ -type f -size +1M -exec du -sh {} \; | sort -rh | head -20
-          echo "=== File count by extension ==="
-          find out/ -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -15
-        working-directory: .
-
       - name: Strip SEO pages from mobile bundle
         run: |
           # Mobile app uses top-level routes (/login, /office, etc.)
@@ -274,7 +249,6 @@ jobs:
           for dir in $SEO_DIRS; do
             rm -rf "out/$dir"
           done
-          echo "After strip: $(du -sh out/ | cut -f1)"
         working-directory: .
 
       - name: Setup Java
