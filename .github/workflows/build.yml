@@ -11,7 +11,7 @@ on:
         required: true
 
 concurrency:
-  group: build-${{ inputs.version }}
+  group: build
   cancel-in-progress: true
 
 jobs:
