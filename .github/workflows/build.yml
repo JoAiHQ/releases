@@ -337,6 +337,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
         run: |
+          gh release delete "v${{ steps.version.outputs.version }}" --repo JoAiHQ/homebrew-joai --yes 2>/dev/null || true
           gh release create "v${{ steps.version.outputs.version }}" \
             --repo JoAiHQ/homebrew-joai \
             --title "JoAi v${{ steps.version.outputs.version }}" \
