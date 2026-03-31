@@ -145,7 +145,7 @@ jobs:
         working-directory: .
 
       - name: Build web app
-        run: npm run build:app
+        run: npm run build && npm run build:app
         working-directory: .
         env:
           NEXT_PUBLIC_ENV: mainnet
@@ -231,7 +231,7 @@ jobs:
         working-directory: .
 
       - name: Build web app
-        run: npm run build:app
+        run: npm run build && npm run build:app
         working-directory: .
         env:
           NEXT_PUBLIC_ENV: mainnet
