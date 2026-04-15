@@ -204,6 +204,25 @@ jobs:
           NEXT_PUBLIC_ENV: mainnet
         run: bundle exec fastlane beta
 
+      - name: Collect iOS size
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          IPA=$(find . -name "*.ipa" 2>/dev/null | head -1)
+          IPA_BYTES=0
+          if [ -n "$IPA" ]; then
+            IPA_BYTES=$(wc -c < "$IPA")
+          fi
+          echo "{\"ipa_bytes\": $IPA_BYTES}" > /tmp/size-ios.json
+
+      - name: Upload iOS size artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: size-ios
+          path: /tmp/size-ios.json
+          retention-days: 1
+
   # ──────────────────────────────────────────────────────
   # Android — Play Store (internal testing)
   # ──────────────────────────────────────────────────────
@@ -251,56 +270,6 @@ jobs:
           done
         working-directory: .
 
-      - name: Generate web bundle size report
-        working-directory: ${{ github.workspace }}
-        run: |
-          REPORT="bundle-size-report.md"
-          echo "# Bundle Size Report — ${{ inputs.version }}" > $REPORT
-          echo "" >> $REPORT
-          echo "Generated: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $REPORT
-          echo "" >> $REPORT
-
-          echo "## Web Bundle (after SEO strip)" >> $REPORT
-          echo "" >> $REPORT
-          echo "| Path | Size |" >> $REPORT
-          echo "|------|------|" >> $REPORT
-          echo "| \`out/\` total | $(du -sh out/ | cut -f1) |" >> $REPORT
-          echo "| \`_next/static/\` | $(du -sh out/_next/static/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
-          echo "| \`_next/static/chunks/\` | $(du -sh out/_next/static/chunks/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
-          echo "| \`_next/static/media/\` | $(du -sh out/_next/static/media/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
-          echo "| \`_next/static/css/\` | $(du -sh out/_next/static/css/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
-          echo "" >> $REPORT
-
-          COMPRESSED_BYTES=$(tar -czf - out/ | wc -c)
-          echo "**Estimated gzip-compressed size: ~$(( COMPRESSED_BYTES / 1024 / 1024 )) MB**" >> $REPORT
-          echo "" >> $REPORT
-
-          echo "### Top 15 largest JS chunks" >> $REPORT
-          echo '```' >> $REPORT
-          find out/_next/static/chunks -name "*.js" -printf "%s %p\n" 2>/dev/null \
-            | sort -rn | head -15 \
-            | awk '{printf "%.0f KB\t%s\n", $1/1024, $2}' >> $REPORT
-          echo '```' >> $REPORT
-          echo "" >> $REPORT
-
-          echo "### Media files by extension" >> $REPORT
-          echo '```' >> $REPORT
-          for ext in woff woff2 png jpg jpeg svg ico gif webp; do
-            files=$(find out/_next/static/media -name "*.$ext" 2>/dev/null | tr '\n' ' ')
-            if [ -n "$files" ]; then
-              count=$(find out/_next/static/media -name "*.$ext" 2>/dev/null | wc -l | tr -d ' ')
-              size=$(find out/_next/static/media -name "*.$ext" 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1)
-              echo "$ext: $count files, $size"
-            fi
-          done >> $REPORT
-          echo '```' >> $REPORT
-          echo "" >> $REPORT
-
-          echo "### Top-level routes (post-strip)" >> $REPORT
-          echo '```' >> $REPORT
-          du -sh out/*/ 2>/dev/null | sort -rh | head -25 >> $REPORT
-          echo '```' >> $REPORT
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -341,30 +310,253 @@ jobs:
           NEXT_PUBLIC_ENV: mainnet
         run: bundle exec fastlane internal
 
-      - name: Append AAB size to report
+      - name: Collect Android & web bundle sizes
         if: always()
         working-directory: ${{ github.workspace }}
         run: |
-          REPORT="bundle-size-report.md"
-          AAB="android/app/build/outputs/bundle/release/app-release.aab"
-          echo "" >> $REPORT
-          echo "## Android AAB" >> $REPORT
-          echo "" >> $REPORT
-          if [ -f "$AAB" ]; then
-            SIZE=$(du -sh "$AAB" | cut -f1)
-            SIZE_MB=$(( $(wc -c < "$AAB") / 1024 / 1024 ))
-            echo "| File | Size |" >> $REPORT
-            echo "|------|------|" >> $REPORT
-            echo "| \`app-release.aab\` | $SIZE (~${SIZE_MB} MB) |" >> $REPORT
-            echo "" >> $REPORT
-            if [ "$SIZE_MB" -ge 150 ]; then
-              echo "> ⚠️ AAB is ${SIZE_MB} MB — approaching or exceeding the 200 MB Play Store compressed limit." >> $REPORT
-            fi
-          else
-            echo "_AAB not found — build may have failed before \`bundleRelease\`._" >> $REPORT
-          fi
+          python3 << 'PYEOF'
+          import json, os, glob, subprocess
 
-      - name: Upload size report
+          def dir_bytes(path):
+              if not os.path.exists(path):
+                  return 0
+              r = subprocess.run(['du', '-sb', path], capture_output=True, text=True)
+              return int(r.stdout.split()[0]) if r.returncode == 0 else 0
+
+          stats = {}
+
+          # Web bundle (out/ persists after cap sync)
+          if os.path.exists('out'):
+              stats['out_total_bytes']  = dir_bytes('out')
+              stats['static_bytes']     = dir_bytes('out/_next/static')
+              stats['chunks_bytes']     = dir_bytes('out/_next/static/chunks')
+              stats['media_bytes']      = dir_bytes('out/_next/static/media')
+              stats['css_bytes']        = dir_bytes('out/_next/static/css')
+
+              # Compressed estimate
+              r = subprocess.run('tar -czf - out/ | wc -c', shell=True, capture_output=True, text=True)
+              stats['compressed_bytes'] = int(r.stdout.strip()) if r.returncode == 0 else 0
+
+              # Top 20 JS chunks by size
+              chunks = [
+                  {'file': os.path.basename(f), 'bytes': os.path.getsize(f)}
+                  for f in glob.glob('out/_next/static/chunks/**/*.js', recursive=True)
+              ]
+              chunks.sort(key=lambda x: x['bytes'], reverse=True)
+              stats['top_chunks'] = chunks[:20]
+
+              # Media breakdown by extension
+              media = {}
+              for f in glob.glob('out/_next/static/media/**/*', recursive=True):
+                  if not os.path.isfile(f):
+                      continue
+                  ext = f.rsplit('.', 1)[-1].lower() if '.' in f else 'other'
+                  if ext not in media:
+                      media[ext] = {'count': 0, 'bytes': 0}
+                  media[ext]['count'] += 1
+                  media[ext]['bytes'] += os.path.getsize(f)
+              stats['media_by_ext'] = media
+
+              # Top-level app routes (post-strip)
+              routes = {}
+              for item in os.listdir('out'):
+                  path = f'out/{item}'
+                  if os.path.isdir(path) and not item.startswith('_'):
+                      routes[item] = dir_bytes(path)
+              stats['routes'] = dict(sorted(routes.items(), key=lambda x: x[1], reverse=True)[:25])
+
+          # AAB
+          aab = 'android/app/build/outputs/bundle/release/app-release.aab'
+          stats['aab_bytes'] = os.path.getsize(aab) if os.path.exists(aab) else 0
+
+          with open('/tmp/size-android.json', 'w') as f:
+              json.dump(stats, f)
+
+          print(f"Collected: {list(stats.keys())}")
+          PYEOF
+
+      - name: Upload Android size artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: size-android
+          path: /tmp/size-android.json
+          retention-days: 1
+
+  # ──────────────────────────────────────────────────────
+  # Bundle Size Report — assembled after all platform jobs
+  # ──────────────────────────────────────────────────────
+  bundle-report:
+    name: Bundle Size Report
+    needs: [publish-tauri, publish-ios, publish-android]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download platform size artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: size-*
+          path: /tmp/sizes
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Download desktop release artifacts
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/desktop
+          for i in 1 2 3; do
+            gh release download "${{ inputs.version }}" \
+              --repo JoAiHQ/releases \
+              --dir /tmp/desktop 2>/dev/null && break
+            echo "Retry $i..."
+            sleep 15
+          done
+
+      - name: Generate report
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, glob, datetime
+
+          version = os.environ.get('VERSION', 'unknown')
+          now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+
+          def fmt(b):
+              b = int(b or 0)
+              if b == 0: return '—'
+              if b >= 1024**3: return f'{b/1024**3:.1f} GB'
+              if b >= 1024**2: return f'{b/1024**2:.1f} MB'
+              if b >= 1024: return f'{b/1024:.1f} KB'
+              return f'{b} B'
+
+          def load(path):
+              try:
+                  with open(path) as f:
+                      return json.load(f)
+              except Exception:
+                  return {}
+
+          android = load('/tmp/sizes/size-android.json')
+          ios     = load('/tmp/sizes/size-ios.json')
+
+          # Desktop artifacts from GitHub release (skip signatures, update manifests)
+          SKIP_SUFFIXES = ('.sig', '.tar.gz.sig', 'latest.json', 'update.json')
+          SHOW_SUFFIXES = ('.dmg', '.exe', '.msi', '.AppImage', '.app.tar.gz', '.deb', '.rpm')
+          desktop = {}
+          for fname in sorted(os.listdir('/tmp/desktop')):
+              path = f'/tmp/desktop/{fname}'
+              if not os.path.isfile(path): continue
+              if any(fname.endswith(s) for s in SKIP_SUFFIXES): continue
+              if any(fname.endswith(s) for s in SHOW_SUFFIXES):
+                  desktop[fname] = os.path.getsize(path)
+
+          lines = []
+          lines += [
+              f'# JoAi Bundle Size Report — {version}',
+              '',
+              f'Generated: {now}',
+              '',
+          ]
+
+          # ── Platform Artifacts ──────────────────────────────────
+          lines += ['## Platform Artifacts', '']
+          lines += ['| Platform | Artifact | Size | Notes |']
+          lines += ['|----------|----------|------|-------|']
+
+          aab_bytes = android.get('aab_bytes', 0)
+          aab_mb    = aab_bytes / 1024**2 if aab_bytes else 0
+          if aab_mb >= 200:
+              aab_note = '🔴 Exceeds 200 MB Play Store limit'
+          elif aab_mb >= 150:
+              aab_note = '🟡 Approaching 200 MB limit'
+          elif aab_bytes:
+              aab_note = '🟢 OK'
+          else:
+              aab_note = 'Build failed or not found'
+          lines.append(f'| Android | `app-release.aab` | {fmt(aab_bytes)} | {aab_note} |')
+
+          ipa_bytes = ios.get('ipa_bytes', 0)
+          lines.append(f'| iOS | `.ipa` | {fmt(ipa_bytes)} | Uploaded to TestFlight |')
+
+          PLATFORM_MAP = [
+              ('aarch64', '.dmg',       'macOS (ARM) DMG'),
+              ('x64',     '.dmg',       'macOS (Intel) DMG'),
+              ('aarch64', '.app.tar.gz','macOS (ARM) .app'),
+              ('x64',     '.app.tar.gz','macOS (Intel) .app'),
+              ('amd64',   '.AppImage',  'Linux AppImage'),
+              ('x86_64',  '.AppImage',  'Linux AppImage'),
+              ('',        '.exe',       'Windows NSIS'),
+              ('',        '.msi',       'Windows MSI'),
+          ]
+          matched = set()
+          for arch, suffix, label in PLATFORM_MAP:
+              for fname, size in desktop.items():
+                  if fname in matched: continue
+                  if fname.endswith(suffix) and (not arch or arch in fname):
+                      lines.append(f'| {label} | `{fname}` | {fmt(size)} | — |')
+                      matched.add(fname)
+
+          # Any remaining unmatched desktop artifacts
+          for fname, size in desktop.items():
+              if fname not in matched:
+                  lines.append(f'| Desktop | `{fname}` | {fmt(size)} | — |')
+
+          lines.append('')
+
+          # ── Web Bundle ─────────────────────────────────────────
+          if android.get('out_total_bytes'):
+              lines += [
+                  '## Web Bundle (mobile — after SEO strip)',
+                  '',
+                  '_Analyzed from Android build. iOS uses the same bundle._',
+                  '',
+                  '| Path | Size |',
+                  '|------|------|',
+                  f'| `out/` total | {fmt(android.get("out_total_bytes"))} |',
+                  f'| `_next/static/` | {fmt(android.get("static_bytes"))} |',
+                  f'| `_next/static/chunks/` | {fmt(android.get("chunks_bytes"))} |',
+                  f'| `_next/static/media/` | {fmt(android.get("media_bytes"))} |',
+                  f'| `_next/static/css/` | {fmt(android.get("css_bytes"))} |',
+                  '',
+                  f'**Estimated gzip-compressed: ~{fmt(android.get("compressed_bytes"))}**',
+                  '',
+              ]
+
+              # JS chunks
+              top_chunks = android.get('top_chunks', [])
+              if top_chunks:
+                  lines += ['### Top JS Chunks', '', '| Size | File |', '|------|------|']
+                  for c in top_chunks:
+                      lines.append(f'| {fmt(c["bytes"])} | `{c["file"]}` |')
+                  lines.append('')
+
+              # Media
+              media_by_ext = android.get('media_by_ext', {})
+              if media_by_ext:
+                  lines += ['### Media Files by Type', '', '| Extension | Files | Total Size |', '|-----------|-------|------------|']
+                  for ext, d in sorted(media_by_ext.items(), key=lambda x: x[1]['bytes'], reverse=True):
+                      lines.append(f'| `.{ext}` | {d["count"]} | {fmt(d["bytes"])} |')
+                  lines.append('')
+
+              # Routes
+              routes = android.get('routes', {})
+              if routes:
+                  lines += ['### App Routes (post-strip)', '', '| Route | Size |', '|-------|------|']
+                  for route, size in list(routes.items())[:25]:
+                      lines.append(f'| `/{route}` | {fmt(size)} |')
+                  lines.append('')
+
+          report = '\n'.join(lines) + '\n'
+          print(report)
+
+          with open('bundle-size-report.md', 'w') as f:
+              f.write(report)
+          PYEOF
+
+      - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
         with:
