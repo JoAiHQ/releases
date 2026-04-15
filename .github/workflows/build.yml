@@ -554,15 +554,69 @@ jobs:
 
           with open('bundle-size-report.md', 'w') as f:
               f.write(report)
+
+          # Compact summary for the release body (platform table + key web metrics only)
+          summary = []
+          summary.append('---')
+          summary.append('')
+          summary.append('## Bundle Sizes')
+          summary.append('')
+          summary += ['| Platform | Artifact | Size | Status |', '|----------|----------|------|--------|']
+
+          if aab_bytes:
+              summary.append(f'| Android | `app-release.aab` | {fmt(aab_bytes)} | {aab_note} |')
+          if ipa_bytes:
+              summary.append(f'| iOS | `.ipa` | {fmt(ipa_bytes)} | Uploaded to TestFlight |')
+          for arch, suffix, label in PLATFORM_MAP:
+              for fname, size in desktop.items():
+                  if fname.endswith(suffix) and (not arch or arch in fname):
+                      summary.append(f'| {label} | `{fname}` | {fmt(size)} | — |')
+                      break
+
+          summary.append('')
+          if android.get('chunks_bytes'):
+              summary.append(
+                  f'Web bundle (mobile): JS chunks {fmt(android["chunks_bytes"])} · '
+                  f'gzip ~{fmt(android.get("compressed_bytes", 0))} · '
+                  f'[full report attached ↓](bundle-size-report.md)'
+              )
+          summary.append('')
+
+          with open('release-summary.md', 'w') as f:
+              f.write('\n'.join(summary) + '\n')
           PYEOF
 
-      - name: Upload report
+      - name: Upload report as Actions artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bundle-size-report-${{ inputs.version }}
           path: bundle-size-report.md
           retention-days: 90
+
+      - name: Attach report to GitHub release
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ inputs.version }}" bundle-size-report.md \
+            --repo JoAiHQ/releases \
+            --clobber
+
+      - name: Append bundle summary to release body
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+        run: |
+          CURRENT=$(gh release view "${{ inputs.version }}" \
+            --repo JoAiHQ/releases \
+            --json body --jq '.body')
+          printf '%s\n\n%s' "$CURRENT" "$(cat release-summary.md)" > /tmp/new-release-body.md
+          gh release edit "${{ inputs.version }}" \
+            --repo JoAiHQ/releases \
+            --notes-file /tmp/new-release-body.md
 
   # ──────────────────────────────────────────────────────
   # Homebrew — Update tap with macOS artifacts
