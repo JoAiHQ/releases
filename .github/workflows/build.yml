@@ -251,6 +251,56 @@ jobs:
           done
         working-directory: .
 
+      - name: Generate web bundle size report
+        working-directory: ${{ github.workspace }}
+        run: |
+          REPORT="bundle-size-report.md"
+          echo "# Bundle Size Report — ${{ inputs.version }}" > $REPORT
+          echo "" >> $REPORT
+          echo "Generated: $(date -u '+%Y-%m-%d %H:%M UTC')" >> $REPORT
+          echo "" >> $REPORT
+
+          echo "## Web Bundle (after SEO strip)" >> $REPORT
+          echo "" >> $REPORT
+          echo "| Path | Size |" >> $REPORT
+          echo "|------|------|" >> $REPORT
+          echo "| \`out/\` total | $(du -sh out/ | cut -f1) |" >> $REPORT
+          echo "| \`_next/static/\` | $(du -sh out/_next/static/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
+          echo "| \`_next/static/chunks/\` | $(du -sh out/_next/static/chunks/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
+          echo "| \`_next/static/media/\` | $(du -sh out/_next/static/media/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
+          echo "| \`_next/static/css/\` | $(du -sh out/_next/static/css/ 2>/dev/null | cut -f1 || echo 'n/a') |" >> $REPORT
+          echo "" >> $REPORT
+
+          COMPRESSED_BYTES=$(tar -czf - out/ | wc -c)
+          echo "**Estimated gzip-compressed size: ~$(( COMPRESSED_BYTES / 1024 / 1024 )) MB**" >> $REPORT
+          echo "" >> $REPORT
+
+          echo "### Top 15 largest JS chunks" >> $REPORT
+          echo '```' >> $REPORT
+          find out/_next/static/chunks -name "*.js" -printf "%s %p\n" 2>/dev/null \
+            | sort -rn | head -15 \
+            | awk '{printf "%.0f KB\t%s\n", $1/1024, $2}' >> $REPORT
+          echo '```' >> $REPORT
+          echo "" >> $REPORT
+
+          echo "### Media files by extension" >> $REPORT
+          echo '```' >> $REPORT
+          for ext in woff woff2 png jpg jpeg svg ico gif webp; do
+            files=$(find out/_next/static/media -name "*.$ext" 2>/dev/null | tr '\n' ' ')
+            if [ -n "$files" ]; then
+              count=$(find out/_next/static/media -name "*.$ext" 2>/dev/null | wc -l | tr -d ' ')
+              size=$(find out/_next/static/media -name "*.$ext" 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1)
+              echo "$ext: $count files, $size"
+            fi
+          done >> $REPORT
+          echo '```' >> $REPORT
+          echo "" >> $REPORT
+
+          echo "### Top-level routes (post-strip)" >> $REPORT
+          echo '```' >> $REPORT
+          du -sh out/*/ 2>/dev/null | sort -rh | head -25 >> $REPORT
+          echo '```' >> $REPORT
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -290,6 +340,37 @@ jobs:
           SKIP_BUILD: 'true'
           NEXT_PUBLIC_ENV: mainnet
         run: bundle exec fastlane internal
+
+      - name: Append AAB size to report
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          REPORT="bundle-size-report.md"
+          AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          echo "" >> $REPORT
+          echo "## Android AAB" >> $REPORT
+          echo "" >> $REPORT
+          if [ -f "$AAB" ]; then
+            SIZE=$(du -sh "$AAB" | cut -f1)
+            SIZE_MB=$(( $(wc -c < "$AAB") / 1024 / 1024 ))
+            echo "| File | Size |" >> $REPORT
+            echo "|------|------|" >> $REPORT
+            echo "| \`app-release.aab\` | $SIZE (~${SIZE_MB} MB) |" >> $REPORT
+            echo "" >> $REPORT
+            if [ "$SIZE_MB" -ge 150 ]; then
+              echo "> ⚠️ AAB is ${SIZE_MB} MB — approaching or exceeding the 200 MB Play Store compressed limit." >> $REPORT
+            fi
+          else
+            echo "_AAB not found — build may have failed before \`bundleRelease\`._" >> $REPORT
+          fi
+
+      - name: Upload size report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-size-report-${{ inputs.version }}
+          path: bundle-size-report.md
+          retention-days: 90
 
   # ──────────────────────────────────────────────────────
   # Homebrew — Update tap with macOS artifacts
