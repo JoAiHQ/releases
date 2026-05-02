@@ -75,6 +75,25 @@ jobs:
       - name: Refresh static cache expiry
         run: node scripts/refresh-manifest-expiry.js
 
+      - name: Build web app
+        run: npm run build && cross-env SKIP_INDEXNOW=1 NEXT_DISABLE_ESLINT=1 npm run build:app
+        env:
+          NEXT_PUBLIC_ENV: mainnet
+          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+
+      - name: Strip SEO pages from desktop bundle
+        run: |
+          # Tauri embeds frontendDist into the Rust binary. Keep only app routes.
+          rm -rf out/en out/de out/fr out/es out/ro out/it
+          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
+          for dir in $SEO_DIRS; do
+            rm -rf "out/$dir"
+          done
+
+      - name: Disable duplicate Tauri web build
+        run: |
+          node -e 'const fs=require("fs"); const path="src-tauri/tauri.conf.json"; const config=JSON.parse(fs.readFileSync(path,"utf8")); config.build.beforeBuildCommand=""; fs.writeFileSync(path, JSON.stringify(config, null, 2) + "\n");'
+
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.runner, 'macos-')
         env:
