@@ -76,10 +76,12 @@ jobs:
         run: node scripts/refresh-manifest-expiry.js
 
       - name: Build web app
-        run: npm run build && cross-env SKIP_INDEXNOW=1 NEXT_DISABLE_ESLINT=1 npm run build:app
+        run: npm run build && npm run build:app
         env:
           NEXT_PUBLIC_ENV: mainnet
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+          SKIP_INDEXNOW: '1'
+          NEXT_DISABLE_ESLINT: '1'
 
       - name: Strip SEO pages from desktop bundle
         run: |
