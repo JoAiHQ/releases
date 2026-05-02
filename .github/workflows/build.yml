@@ -19,7 +19,7 @@ jobs:
   # Desktop — Tauri (macOS ARM/Intel, Linux, Windows)
   # ──────────────────────────────────────────────────────
   publish-tauri:
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write
     env:
@@ -57,7 +57,7 @@ jobs:
           cache: npm
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.91.1
         with:
           targets: ${{ matrix.rust_targets }}
 
