@@ -85,12 +85,7 @@ jobs:
 
       - name: Strip SEO pages from desktop bundle
         run: |
-          # Tauri embeds frontendDist into the Rust binary. Keep only app routes.
-          rm -rf out/en out/de out/fr out/es out/ro out/it
-          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
-          for dir in $SEO_DIRS; do
-            rm -rf "out/$dir"
-          done
+          node -e 'const fs=require("fs"); const dirs=["en","de","fr","es","ro","it","about","ai-demo","alternatives","answers","best","chains","changelog","contact","ecosystem","security","use-cases","wallets"]; for (const dir of dirs) fs.rmSync(`out/${dir}`, { recursive: true, force: true });'
 
       - name: Disable duplicate Tauri web build
         run: |
