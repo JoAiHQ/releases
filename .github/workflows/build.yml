@@ -25,6 +25,8 @@ jobs:
     env:
       NODE_OPTIONS: --max-old-space-size=6144
       NEXT_TELEMETRY_DISABLED: '1'
+      CARGO_PROFILE_RELEASE_DEBUG: 'false'
+      RUSTFLAGS: '-C debuginfo=0'
     strategy:
       fail-fast: false
       matrix:
@@ -57,7 +59,7 @@ jobs:
           cache: npm
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@1.91.1
+        uses: dtolnay/rust-toolchain@1.89.0
         with:
           targets: ${{ matrix.rust_targets }}
 
