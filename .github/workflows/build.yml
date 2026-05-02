@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-latest
+          - runner: macos-26
             args: '--target aarch64-apple-darwin --bundles app,dmg'
             rust_targets: 'aarch64-apple-darwin'
           - runner: macos-15-intel
@@ -123,7 +123,7 @@ jobs:
   # ──────────────────────────────────────────────────────
   publish-ios:
     timeout-minutes: 45
-    runs-on: macos-latest
+    runs-on: macos-26
     defaults:
       run:
         working-directory: ios
@@ -157,7 +157,7 @@ jobs:
         run: |
           # Mobile app uses top-level routes (/login, /office, etc.)
           # Locale dirs are only for SEO marketing pages — safe to remove
-          rm -rf out/en out/de
+          rm -rf out/en out/de out/fr out/es out/ro out/it
           # Remove SEO-only top-level dirs
           SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
           for dir in $SEO_DIRS; do
@@ -262,7 +262,7 @@ jobs:
         run: |
           # Mobile app uses top-level routes (/login, /office, etc.)
           # Locale dirs are only for SEO marketing pages — safe to remove
-          rm -rf out/en out/de
+          rm -rf out/en out/de out/fr out/es out/ro out/it
           # Remove SEO-only top-level dirs
           SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
           for dir in $SEO_DIRS; do
