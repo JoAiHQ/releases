@@ -72,6 +72,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Sync native version to package.json
+        run: node sync-version.js
+
       - name: Refresh static cache expiry
         run: node scripts/refresh-manifest-expiry.js
 
