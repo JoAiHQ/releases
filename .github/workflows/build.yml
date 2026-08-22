@@ -16,9 +16,91 @@ concurrency:
 
 jobs:
   # ──────────────────────────────────────────────────────
+  # Shared web build (once — avoids GitHub API rate limits)
+  # ──────────────────────────────────────────────────────
+  build-web:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: JoAiHQ/pwa
+          token: ${{ secrets.JOAI_GITHUB_TOKEN }}
+          ref: ${{ inputs.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Sync native version to package.json
+        run: node sync-version.js
+
+      - name: Refresh static cache expiry
+        run: node scripts/refresh-manifest-expiry.js
+
+      - name: Build web app
+        run: npm run build && npm run build:app
+        env:
+          NEXT_PUBLIC_ENV: mainnet
+          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+          SKIP_INDEXNOW: '1'
+          NEXT_DISABLE_ESLINT: '1'
+
+      - name: Strip SEO pages from app bundle
+        run: |
+          node -e 'const fs=require("fs"); const dirs=["en","de","fr","es","ro","it","about","ai-demo","alternatives","answers","best","chains","changelog","contact","ecosystem","security","use-cases","wallets"]; for (const dir of dirs) fs.rmSync(`out/${dir}`, { recursive: true, force: true });'
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: out/
+          retention-days: 1
+
+  # ──────────────────────────────────────────────────────
+  # GitHub release (once — matrix jobs only upload assets)
+  # ──────────────────────────────────────────────────────
+  create-release:
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - name: Create GitHub release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.version }}"
+          REPO="JoAiHQ/releases"
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "JoAi $TAG" \
+              --notes "Release notes: https://joai.ai/changelog"
+          fi
+
+          ID=$(gh release view "$TAG" --repo "$REPO" --json id --jq .id)
+          echo "release_id=$ID" >> "$GITHUB_OUTPUT"
+
+  # ──────────────────────────────────────────────────────
   # Desktop — Tauri (macOS ARM/Intel, Linux, Windows)
   # ──────────────────────────────────────────────────────
   publish-tauri:
+    needs: [build-web, create-release]
     timeout-minutes: 90
     permissions:
       contents: write
@@ -72,23 +154,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Sync native version to package.json
-        run: node sync-version.js
-
-      - name: Refresh static cache expiry
-        run: node scripts/refresh-manifest-expiry.js
-
-      - name: Build web app
-        run: npm run build && npm run build:app
-        env:
-          NEXT_PUBLIC_ENV: mainnet
-          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
-          SKIP_INDEXNOW: '1'
-          NEXT_DISABLE_ESLINT: '1'
-
-      - name: Strip SEO pages from desktop bundle
-        run: |
-          node -e 'const fs=require("fs"); const dirs=["en","de","fr","es","ro","it","about","ai-demo","alternatives","answers","best","chains","changelog","contact","ecosystem","security","use-cases","wallets"]; for (const dir of dirs) fs.rmSync(`out/${dir}`, { recursive: true, force: true });'
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: out
 
       - name: Disable duplicate Tauri web build
         run: |
@@ -132,17 +202,20 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ inputs.version }}
           releaseName: 'JoAi ${{ inputs.version }}'
           releaseBody: 'Release notes: https://joai.ai/changelog'
           releaseDraft: false
           prerelease: false
+          retryAttempts: 3
           args: ${{ matrix.args }}
 
   # ──────────────────────────────────────────────────────
   # iOS — TestFlight
   # ──────────────────────────────────────────────────────
   publish-ios:
+    needs: build-web
     timeout-minutes: 45
     runs-on: macos-26
     defaults:
@@ -165,26 +238,11 @@ jobs:
         run: npm ci --legacy-peer-deps
         working-directory: .
 
-      - name: Build web app
-        run: npm run build && npm run build:app
-        working-directory: .
-        env:
-          NEXT_PUBLIC_ENV: mainnet
-          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
-          SKIP_INDEXNOW: '1'
-          NODE_OPTIONS: --max-old-space-size=6144
-
-      - name: Strip SEO pages from mobile bundle
-        run: |
-          # Mobile app uses top-level routes (/login, /office, etc.)
-          # Locale dirs are only for SEO marketing pages — safe to remove
-          rm -rf out/en out/de out/fr out/es out/ro out/it
-          # Remove SEO-only top-level dirs
-          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
-          for dir in $SEO_DIRS; do
-            rm -rf "out/$dir"
-          done
-        working-directory: .
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: out
 
       - name: Load CI config
         run: |
@@ -248,6 +306,7 @@ jobs:
   # Android — Play Store (internal testing)
   # ──────────────────────────────────────────────────────
   publish-android:
+    needs: build-web
     timeout-minutes: 30
     runs-on: ubuntu-latest
     defaults:
@@ -270,26 +329,11 @@ jobs:
         run: npm ci --legacy-peer-deps
         working-directory: .
 
-      - name: Build web app
-        run: npm run build && npm run build:app
-        working-directory: .
-        env:
-          NEXT_PUBLIC_ENV: mainnet
-          GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
-          SKIP_INDEXNOW: '1'
-          NODE_OPTIONS: --max-old-space-size=6144
-
-      - name: Strip SEO pages from mobile bundle
-        run: |
-          # Mobile app uses top-level routes (/login, /office, etc.)
-          # Locale dirs are only for SEO marketing pages — safe to remove
-          rm -rf out/en out/de out/fr out/es out/ro out/it
-          # Remove SEO-only top-level dirs
-          SEO_DIRS="about ai-demo alternatives answers best chains changelog contact ecosystem security use-cases wallets"
-          for dir in $SEO_DIRS; do
-            rm -rf "out/$dir"
-          done
-        working-directory: .
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: web-bundle
+          path: out
 
       - name: Setup Java
         uses: actions/setup-java@v4
