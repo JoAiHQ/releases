@@ -154,6 +154,20 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Sync native version to package.json
+        run: node sync-version.js
+
+      - name: Verify desktop version matches release tag
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAURI=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          TAG="${{ inputs.version }}"
+          EXPECTED="${TAG#v}"
+          if [ "$PKG" != "$EXPECTED" ] || [ "$TAURI" != "$EXPECTED" ]; then
+            echo "Version mismatch: tag=$TAG package=$PKG tauri=$TAURI"
+            exit 1
+          fi
+
       - name: Download web bundle
         uses: actions/download-artifact@v4
         with:
@@ -236,6 +250,10 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
+        working-directory: .
+
+      - name: Sync native version to package.json
+        run: node sync-version.js
         working-directory: .
 
       - name: Download web bundle
@@ -327,6 +345,10 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci --legacy-peer-deps
+        working-directory: .
+
+      - name: Sync native version to package.json
+        run: node sync-version.js
         working-directory: .
 
       - name: Download web bundle
