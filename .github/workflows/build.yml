@@ -158,6 +158,8 @@ jobs:
         run: node sync-version.js
 
       - name: Verify desktop version matches release tag
+        # Windows runners default `run` steps to PowerShell; this script uses Bash syntax.
+        shell: bash
         run: |
           PKG=$(node -p "require('./package.json').version")
           TAURI=$(node -p "require('./src-tauri/tauri.conf.json').version")
