@@ -47,7 +47,8 @@ jobs:
         run: node scripts/refresh-manifest-expiry.js
 
       - name: Build web app
-        run: npm run build && npm run build:app
+        # build:static sets STATIC_EXPORT=1 so Next writes Cap/Tauri `out/`
+        run: npm run build && npm run build:static
         env:
           NEXT_PUBLIC_ENV: mainnet
           GITHUB_TOKEN: ${{ secrets.JOAI_GITHUB_TOKEN }}
@@ -64,6 +65,7 @@ jobs:
           name: web-bundle
           path: out/
           retention-days: 1
+          if-no-files-found: error
 
   # ──────────────────────────────────────────────────────
   # GitHub release (once — matrix jobs only upload assets)
