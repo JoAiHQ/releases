@@ -47,7 +47,6 @@ jobs:
         run: node scripts/refresh-manifest-expiry.js
 
       - name: Build web app
-        # build:static sets STATIC_EXPORT=1 so Next writes Cap/Tauri `out/`
         run: npm run build && npm run build:static
         env:
           NEXT_PUBLIC_ENV: mainnet
